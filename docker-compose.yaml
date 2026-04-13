@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      - GATEWAY_STT_URL=http://stt:8001
+      - GATEWAY_LLM_URL=http://llm:8002
+      - GATEWAY_TTS_URL=http://tts:8003
+      - GATEWAY_REDIS_URL=redis://redis:6379/0
+      - GATEWAY_CODEC_INPUT_FORMAT=webm
+      - GATEWAY_CODEC_BACKEND=ffmpeg
+    ports:
+      - "8000:8000"
+    depends_on:
+      - stt
+      - llm
+      - tts
+      - redis
+
+  stt:
+    build:
+      context: .
+      dockerfile: services/stt/Dockerfile
+    environment:
+      - STT_WHISPER_DEVICE=cpu
+      - STT_WHISPER_COMPUTE_TYPE=int8
+    ports:
+      - "8001:8001"
+
+  llm:
+    build:
+      context: .
+      dockerfile: services/llm/Dockerfile
+    environment:
+      - LLM_OLLAMA_URL=http://ollama:11434
+      - LLM_MODEL=llama3.2:1b
+    ports:
+      - "8002:8002"
+    depends_on:
+      - ollama
+
+  tts:
+    build:
+      context: .
+      dockerfile: services/tts/Dockerfile
+    environment:
+      - TTS_DEVICE=cpu
+      - TTS_MODEL_NAME=tts_models/en/ljspeech/tacotron2-DDC
+    ports:
+      - "8003:8003"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:

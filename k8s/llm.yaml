@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-config
+data:
+  LLM_OLLAMA_URL: http://ollama:11434
+  LLM_MODEL: llama3.2:1b
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llm
+  template:
+    metadata:
+      labels:
+        app: llm
+    spec:
+      containers:
+        - name: llm
+          image: your-registry/llm:latest
+          ports:
+            - containerPort: 8002
+          envFrom:
+            - configMapRef:
+                name: llm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm
+spec:
+  selector:
+    app: llm
+  ports:
+    - port: 8002
+      targetPort: 8002

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoiceOps Realtime Demo</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; max-width: 800px; }
+      button { margin-right: .5rem; }
+      #log { margin-top: 1rem; background: #111; color: #d8ffd8; padding: 1rem; height: 280px; overflow: auto; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>VoiceOps Half-Duplex Demo</h1>
+    <p>State machine: <strong>LISTENING → THINKING → SPEAKING</strong></p>
+    <button id="connect">Connect</button>
+    <button id="start" disabled>Start Mic</button>
+    <button id="stop" disabled>Stop + Send</button>
+    <div id="log"></div>
+
+    <script>
+      const logEl = document.getElementById('log');
+      const log = (m) => { logEl.textContent += `${new Date().toISOString()} ${m}\n`; logEl.scrollTop = logEl.scrollHeight; };
+
+      let ws;
+      let mediaRecorder;
+      let audioChunks = [];
+
+      document.getElementById('connect').onclick = async () => {
+        ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':8000/ws/session');
+        ws.binaryType = 'arraybuffer';
+
+        ws.onopen = () => {
+          log('WebSocket connected');
+          document.getElementById('start').disabled = false;
+        };
+
+        ws.onmessage = async (ev) => {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === 'tts.audio') {
+            const bytes = Uint8Array.from(atob(msg.audio_b64), c => c.charCodeAt(0));
+            audioChunks.push(new Blob([bytes], { type: 'audio/ogg;codecs=opus' }));
+            return;
+          }
+          if (msg.type === 'tts.end') {
+            const blob = new Blob(audioChunks, { type: 'audio/ogg;codecs=opus' });
+            audioChunks = [];
+            const a = new Audio(URL.createObjectURL(blob));
+            await a.play();
+          }
+          log(JSON.stringify(msg));
+        };
+
+        ws.onclose = () => log('WebSocket closed');
+      };
+
+      document.getElementById('start').onclick = async () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          log('Connect WebSocket first');
+          return;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+        mediaRecorder.ondataavailable = async (event) => {
+          if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            const ab = await event.data.arrayBuffer();
+            ws.send(ab);
+          }
+        };
+        mediaRecorder.start(250);
+        document.getElementById('start').disabled = true;
+        document.getElementById('stop').disabled = false;
+        log('Recording started');
+      };
+
+      document.getElementById('stop').onclick = () => {
+        mediaRecorder?.stop();
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'input_audio_end' }));
+        }
+        document.getElementById('start').disabled = false;
+        document.getElementById('stop').disabled = true;
+        log('Recording stopped; sent input_audio_end');
+      };
+    </script>
+  </body>
+</html>
